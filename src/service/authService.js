@@ -37,9 +37,9 @@ export async function signupService(
 
         return {
             user:{
-                id:user.rows[0].id,
-                email:user.rows[0].email,
-                username:user.rows[0].username
+                id:result.rows[0].id,
+                email:result.rows[0].email,
+                username:result.rows[0].username
             },
             token : generateToken(
                 result.rows[0].id,

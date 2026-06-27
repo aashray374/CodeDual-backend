@@ -21,4 +21,35 @@ ALTER TABLE "users"
 ADD COLUMN "elo" INTEGER DEFAULT 1000; 
 
 ALTER TABLE "users"
-ADD COLUMN "rating" INTEGER; 
+ADD COLUMN "rating" INTEGER;
+
+CREATE TYPE dual_status as ENUM(
+  'not_started',
+  'active',
+  'ended'
+);
+
+CREATE TABLE dual (
+  "id" INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  "rating" INTEGER NOT NULL,
+  "problem" VARCHAR,
+  status dual_status NOT NULL DEFAULT 'not_started'
+)
+
+CREATE TABLE dual_members (
+    user_id INTEGER NOT NULL,
+    dual_id INTEGER NOT NULL,
+
+    PRIMARY KEY (user_id, dual_id),
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (dual_id)
+        REFERENCES dual(id)
+        ON DELETE CASCADE
+);
+
+ALTER TABLE dual 
+ADD COLUMN invite_code VARCHAR NOT NULL;

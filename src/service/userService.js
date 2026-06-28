@@ -77,6 +77,47 @@ export async function profileByUsernameService(
 }
 
 
+export async function searchUsersByUsernameService(
+    query,
+    page,
+    limit
+){
+    const offset = (page-1)*limit;
+
+    const total = await pool.query(
+        `SELECT COUNT(*)
+        FROM users u
+        WHERE u.username ILIKE $1`,
+        [
+            `%${query}%`
+        ]
+    );
+
+    const users = await pool.query(
+        `SELECT *
+        FROM users u
+        WHERE u.username ILIKE $1
+        ORDER BY u.username ASC
+        LIMIT $2
+        OFFSET $3`,
+        [
+            `%${query}%`,
+            limit,
+            offset
+        ]
+    );
+
+    return {
+        page,
+        limit,
+        total: Number(
+                total.rows[0].count
+            ),
+        data: users.rows
+    };
+}
+
+
 export async function syncCFRatingService(
     user
 ){

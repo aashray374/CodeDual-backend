@@ -4,13 +4,19 @@ import {
     addUser,
     removeUser,
     getSocketId,
+    isUserOnline,
     getDualCodeByUserId,
-    removeMember
+    removeMember,
+    addPendingInvitation,
+    getPendingInvitation,
+    removePendingInvitation
 } from "../services/userSessionsService.js";
 
 import {
     startDual,
-    endDual
+    endDual,
+    createDual,
+    joinDual
 } from "../service/dualService.js";
 
 import {
@@ -35,12 +41,178 @@ export default function registerSocketEvents(
     );
 
 
-    
+    // ── Dual: Send Invitation ──────────────────────────────────────────
+    // Sender picks a target player and a rating, server forwards the
+    // invite to the receiver's socket.
+
+    socket.on(
+        "dual:invitation",
+        ({ receiverId, rating }) => {
+
+            const receiverSocket =
+                getSocketId(receiverId);
+
+            if(!receiverSocket){
+
+                socket.emit(
+                    "user-offline",
+                    {
+                        userId: receiverId
+                    }
+                );
+
+                return;
+            }
+
+            addPendingInvitation(
+                receiverId,
+                user.id,
+                rating
+            );
+
+            io.to(receiverSocket).emit(
+                "dual:invitation",
+                {
+                    senderId: user.id,
+                    senderUsername: user.username,
+                    rating
+                }
+            );
+
+        }
+    );
+
+
+    // ── Dual: Accept Invitation ────────────────────────────────────────
+    // Receiver accepts; server creates the dual in DB, registers both
+    // players in the in-memory session, then notifies both sides with
+    // the invite_code so they can join the socket room.
+
+    socket.on(
+        "dual:accept-invitation",
+        async () => {
+
+            try {
+
+                const invitation = getPendingInvitation(user.id);
+
+                if(!invitation){
+
+                    socket.emit(
+                        "dual:error",
+                        {
+                            message: "No pending invitation found"
+                        }
+                    );
+
+                    return;
+                }
+
+                const { senderId, rating } = invitation;
+
+                const senderSocket = getSocketId(senderId);
+
+                if(!senderSocket){
+
+                    removePendingInvitation(user.id);
+
+                    socket.emit(
+                        "user-offline",
+                        {
+                            userId: senderId
+                        }
+                    );
+
+                    return;
+                }
+
+                // Create the dual under the sender's identity, then
+                // join it as the receiver so both are registered in
+                // the in-memory session before we broadcast.
+                const senderUser = io.sockets.sockets
+                    .get(senderSocket)?.user;
+
+                const dual = await createDual(
+                    senderUser,
+                    rating
+                );
+
+                await joinDual(
+                    user,
+                    dual.invite_code
+                );
+
+                removePendingInvitation(user.id);
+
+                const payload = {
+                    invite_code: dual.invite_code,
+                    rating: dual.rating
+                };
+
+                socket.emit(
+                    "dual:invitation-accepted",
+                    payload
+                );
+
+                io.to(senderSocket).emit(
+                    "dual:invitation-accepted",
+                    payload
+                );
+
+            } catch (error) {
+
+                socket.emit(
+                    "dual:error",
+                    {
+                        message: error.message
+                    }
+                );
+
+            }
+
+        }
+    );
+
+
+    // ── Dual: Decline Invitation ───────────────────────────────────────
+    // Receiver declines; sender is notified and the pending invite
+    // is cleared.
+
+    socket.on(
+        "dual:decline-invitation",
+        () => {
+
+            const invitation = getPendingInvitation(user.id);
+
+            if(!invitation){
+                return;
+            }
+
+            const { senderId } = invitation;
+
+            removePendingInvitation(user.id);
+
+            const senderSocket = getSocketId(senderId);
+
+            if(!senderSocket){
+                return;
+            }
+
+            io.to(senderSocket).emit(
+                "dual:invitation-declined",
+                {
+                    declinedBy: user.id,
+                    declinedByUsername: user.username
+                }
+            );
+
+        }
+    );
 
 
     // ── Dual: Join Room ────────────────────────────────────────────────
-    // Called by both players after HTTP create/join so they enter
-    // the Socket.IO room tied to the invite code.
+    // Called by both players after receiving dual:invitation-accepted
+    // so they enter the Socket.IO room tied to the invite code.
 
     socket.on(
         "dual:join-room",
@@ -65,7 +237,7 @@ export default function registerSocketEvents(
 
 
     // ── Dual: Start ────────────────────────────────────────────────────
-    // Either player can trigger this once both are in the room.
+    // Either player triggers this once both are in the room.
     // Picks a problem neither has solved and broadcasts it to the room.
 
     socket.on(
@@ -102,7 +274,7 @@ export default function registerSocketEvents(
 
 
     // ── Dual: Check Submission ─────────────────────────────────────────
-    // A player emits this to claim they have solved the problem.
+    // A player emits this to claim they solved the problem.
     // The server verifies against the Codeforces API before declaring
     // a winner.
 
@@ -166,7 +338,7 @@ export default function registerSocketEvents(
 
 
     // ── Dual: Forfeit ──────────────────────────────────────────────────
-    // A player can voluntarily concede, awarding the win to the other.
+    // A player voluntarily concedes, awarding the win to the other.
 
     socket.on(
         "dual:forfeit",
@@ -174,12 +346,15 @@ export default function registerSocketEvents(
 
             try {
 
-                const members = io.sockets.adapter.rooms.get(invite_code);
+                const members =
+                    io.sockets.adapter.rooms.get(invite_code);
+
                 let winnerId = null;
 
                 if(members){
                     for(const socketId of members){
-                        const s = io.sockets.sockets.get(socketId);
+                        const s =
+                            io.sockets.sockets.get(socketId);
                         if(s && s.user.id !== user.id){
                             winnerId = s.user.id;
                             break;
@@ -235,6 +410,10 @@ export default function registerSocketEvents(
                 );
 
             }
+
+            // Clean up any invite this user sent that hasn't been
+            // acted on yet — notify the receiver if still online.
+            removePendingInvitation(user.id);
 
             removeMember(user.id);
             removeUser(user.id);

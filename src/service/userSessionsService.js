@@ -1,6 +1,7 @@
 const connectedUsers = new Map();
 const dualSessions = new Map();
 const revDualSession = new Map();
+const pendingInvitations = new Map();
 
 
 export function addUser(
@@ -20,6 +21,12 @@ export function getSocketId(
     userId
 ){
     return connectedUsers.get(userId);
+}
+
+export function isUserOnline(
+    userId
+){
+    return connectedUsers.has(userId);
 }
 
 
@@ -79,4 +86,26 @@ export function removeMember(
     }
 
     revDualSession.delete(userId);
+}
+
+
+
+export function addPendingInvitation(
+    receiverId,
+    senderId,
+    rating
+){
+    pendingInvitations.set(receiverId, { senderId, rating });
+}
+
+export function getPendingInvitation(
+    receiverId
+){
+    return pendingInvitations.get(receiverId) ?? null;
+}
+
+export function removePendingInvitation(
+    receiverId
+){
+    pendingInvitations.delete(receiverId);
 }

@@ -53,3 +53,9 @@ CREATE TABLE dual_members (
 
 ALTER TABLE dual 
 ADD COLUMN invite_code VARCHAR NOT NULL;
+
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "codeforces_handle" VARCHAR;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "codeforces_rating" INTEGER;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "codeforces_rank" VARCHAR;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "avatar_url" VARCHAR;
